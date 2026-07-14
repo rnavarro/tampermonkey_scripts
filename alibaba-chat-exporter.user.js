@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Alibaba Chat Exporter
 // @namespace    rnavarro.alibaba.chat
-// @version      1.1
+// @version      1.2
 // @description  Copy the current Alibaba message-center conversation as Markdown or JSON, with a debug dump for edge cases
 // @author       rnavarro
 // @match        https://message.alibaba.com/*
@@ -23,14 +23,35 @@
       const m = (img.getAttribute('src') || '').match(/smily[^/]*\/([^/.]+)/i);
       img.replaceWith(m ? `:${m[1]}:` : '[img]');
     });
-    return c.textContent.replace(/ /g, ' ').replace(/[ \t]+\n/g, '\n').trim();
+    return c.textContent.replace(/ /g, ' ').replace(/[ \t]+\n/g, '\n').trim();
   };
+
+  // System/UI cards that aren't part of the conversation (order protection banner,
+  // "Ready to make the purchase?" payment card, "Select an address" notice, etc.).
+  const isSystem = (w) => !!w.querySelector('.session-security-content, .sys-dx, .item-system-notice');
+
+  // Product-card title: normal product cards (type 2000) put it in a -webkit-line-clamp
+  // span; requirement cards (type 2111) don't, so fall back to the longest non-price span.
+  function cardTitle(card) {
+    const clamp = card.querySelector('span[style*="line-clamp"]')?.textContent.trim();
+    if (clamp) return clamp;
+    const spans = [...card.querySelectorAll('span')].map(s => s.textContent.trim()).filter(Boolean);
+    return spans.filter(t => !/^\$/.test(t)).sort((a, b) => b.length - a.length)[0] || '';
+  }
+
+  // productId: type 2000 carries extBizId in data-expinfo; type 2111 only has it in the
+  // wrapper's data-original URL (productId=… , or ids=<long id> for 2000-style URLs).
+  function cardProductId(w, info) {
+    if (info.extBizId !== undefined) return info.extBizId;
+    const orig = w.getAttribute('data-original') || '';
+    return orig.match(/[?&]productId=(\d+)/)?.[1] || orig.match(/[?&]ids=(\d{6,})/)?.[1];
+  }
 
   function extract() {
     const msgs = [];
     document.querySelectorAll('.message-item-wrapper').forEach(w => {
       let info = {}; try { info = JSON.parse(w.dataset.expinfo || '{}'); } catch (e) {}
-      if (w.querySelector('.session-security-content')) return;
+      if (isSystem(w)) return;
       const dir = w.classList.contains('item-right') ? 'sent' : 'received';
       const displayName = w.querySelector('.item-base-info .name')?.textContent.trim() || '';
       const sender = dir === 'sent' ? SELF_NAME : (displayName || 'seller');
@@ -39,11 +60,17 @@
       const q = w.querySelector('.quote-container');
       if (q) base.quote = { name: q.querySelector('.name')?.textContent.replace(/:\s*$/, '').trim(), content: q.querySelector('.content') ? readText(q.querySelector('.content')) : '' };
       const card = w.querySelector('.session-rich-content.card');
-      if (card) { const price = [...card.querySelectorAll('span')].map(s => s.textContent.trim()).find(t => /^\$/.test(t)) || ''; const title = card.querySelector('span[style*="line-clamp"]')?.textContent.trim() || ''; msgs.push({ ...base, type: 'product_card', product: { productId: info.extBizId, title, price } }); return; }
+      if (card) {
+        const price = [...card.querySelectorAll('span')].map(s => s.textContent.trim()).find(t => /^\$/.test(t)) || '';
+        msgs.push({ ...base, type: 'product_card', product: { productId: cardProductId(w, info), title: cardTitle(card), price } });
+        return;
+      }
       const file = w.querySelector('.inquiry-file-item');
       if (file) { let fq = {}; try { fq = JSON.parse(file.getAttribute('data-query') || '{}'); } catch (e) {} msgs.push({ ...base, type: 'file', file: { name: fq.fileName, size: fq.fileSize, url: fq.downloadUrl } }); return; }
       const video = w.querySelector('video');
       if (video) { msgs.push({ ...base, type: 'video', media: { kind: 'video', src: video.getAttribute('src') } }); return; }
+      const img = w.querySelector('.session-rich-content.media img');
+      if (img) { msgs.push({ ...base, type: 'image', media: { kind: 'image', src: img.getAttribute('src') } }); return; }
       const textEl = w.querySelector('.session-rich-content.text');
       if (textEl) { msgs.push({ ...base, type: 'text', text: readText(textEl) }); return; }
     });
@@ -58,9 +85,10 @@
       if (m.type === 'recalled') return `_${m.sender} recalled a message._\n`;
       const head = `**${m.sender}** · ${m.timeDisplay}`;
       let b;
-      if (m.type === 'product_card') b = `🛒 **${m.product.title}** — ${m.product.price} (product ${m.product.productId})`;
+      if (m.type === 'product_card') b = `🛒 **${m.product.title}** — ${m.product.price}${m.product.productId ? ` (product ${m.product.productId})` : ''}`;
       else if (m.type === 'file') b = `📎 **${m.file.name}** (${mb(m.file.size)})\n${m.file.url}`;
       else if (m.type === 'video') b = `🎬 Video\n${m.media.src}`;
+      else if (m.type === 'image') b = `🖼️ Image\n${m.media.src}`;
       else b = m.text;
       const quote = m.quote ? `> **${m.quote.name}:** ${m.quote.content.replace(/\n/g, '\n> ')}\n\n` : '';
       return `${head}\n${quote}${b}\n`;
@@ -76,18 +104,16 @@
     const flagged = [];
     wrappers.forEach((w, idx) => {
       let info = {}; try { info = JSON.parse(w.dataset.expinfo || '{}'); } catch (e) {}
-      if (w.querySelector('.session-security-content')) { census.security = (census.security || 0) + 1; return; }
+      if (isSystem(w)) { census.system = (census.system || 0) + 1; return; }
       const issues = [];
       let type = 'unknown';
       if (w.querySelector('.revert-msg')) type = 'recalled';
       else if (w.querySelector('.session-rich-content.card')) {
         type = 'product_card';
         const card = w.querySelector('.session-rich-content.card');
-        const title = card.querySelector('span[style*="line-clamp"]')?.textContent.trim() || '';
-        const price = [...card.querySelectorAll('span')].map(s => s.textContent.trim()).find(t => /^\$/.test(t)) || '';
-        if (!title) issues.push('empty product title (line-clamp span not found)');
-        if (info.extBizId === undefined) issues.push('no extBizId in data-expinfo (productId undefined)');
-        if (!price) issues.push('no $ price span found');
+        if (!cardTitle(card)) issues.push('empty product title (no line-clamp or text span found)');
+        if (cardProductId(w, info) === undefined) issues.push('productId not found (no extBizId / data-original productId)');
+        if (![...card.querySelectorAll('span')].some(s => /^\$/.test(s.textContent.trim()))) issues.push('no $ price span found');
       } else if (w.querySelector('.inquiry-file-item')) {
         type = 'file';
         let fq = {}; try { fq = JSON.parse(w.querySelector('.inquiry-file-item').getAttribute('data-query') || '{}'); } catch (e) {}
@@ -96,12 +122,15 @@
       } else if (w.querySelector('video')) {
         type = 'video';
         if (!w.querySelector('video').getAttribute('src')) issues.push('video missing src');
+      } else if (w.querySelector('.session-rich-content.media img')) {
+        type = 'image';
+        if (!w.querySelector('.session-rich-content.media img').getAttribute('src')) issues.push('image missing src');
+      } else if (w.querySelector('.session-rich-content.media')) {
+        type = 'media(unrecognized)';
+        issues.push('has .media but no <video>, .inquiry-file-item, or <img> — new media shape');
       } else if (w.querySelector('.session-rich-content.text')) {
         type = 'text';
         if (!readText(w.querySelector('.session-rich-content.text'))) issues.push('empty text');
-      } else if (w.querySelector('.session-rich-content.media')) {
-        type = 'media(unrecognized)';
-        issues.push('has .media but no <video> or .inquiry-file-item — new media shape');
       } else {
         type = 'UNMATCHED';
         issues.push('matched no branch — this message is DROPPED from the export');
@@ -116,7 +145,7 @@
 
     const lines = [];
     lines.push('=== Alibaba Chat Exporter — DEBUG ===');
-    lines.push('exporter version: 1.1');
+    lines.push('exporter version: 1.2');
     lines.push('total .message-item-wrapper: ' + wrappers.length);
     lines.push('type census: ' + JSON.stringify(census));
     lines.push('flagged (up to 25 shown): ' + flagged.length);
