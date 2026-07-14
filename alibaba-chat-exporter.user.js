@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Alibaba Chat Exporter
 // @namespace    rnavarro.alibaba.chat
-// @version      1.2
+// @version      1.3
 // @description  Copy the current Alibaba message-center conversation as Markdown or JSON, with a debug dump for edge cases
 // @author       rnavarro
 // @match        https://message.alibaba.com/*
@@ -176,7 +176,7 @@
   function toast(msg, bad) {
     if (!toastEl) {
       toastEl = document.createElement('div');
-      Object.assign(toastEl.style, { position: 'fixed', bottom: '76px', right: '20px', zIndex: 2147483647,
+      Object.assign(toastEl.style, { position: 'fixed', bottom: '76px', left: '20px', zIndex: 2147483647,
         padding: '8px 12px', borderRadius: '6px', font: '13px/1.4 system-ui, sans-serif',
         color: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,.25)', transition: 'opacity .3s', pointerEvents: 'none' });
       document.body.appendChild(toastEl);
@@ -203,10 +203,10 @@
     if (!ok) { window.__chatDebug = r.text; console.log('Clipboard blocked. Run: copy(window.__chatDebug)'); }
   }
 
-  function makeBtn(label, cb, right, bg) {
+  function makeBtn(label, cb, left, bg) {
     const b = document.createElement('button');
     b.textContent = label;
-    Object.assign(b.style, { position: 'fixed', bottom: '20px', right: right + 'px', zIndex: 2147483647,
+    Object.assign(b.style, { position: 'fixed', bottom: '20px', left: left + 'px', zIndex: 2147483647,
       padding: '8px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer',
       font: '13px/1 system-ui, sans-serif', color: '#fff', background: bg, boxShadow: '0 2px 8px rgba(0,0,0,.25)' });
     b.addEventListener('click', cb);

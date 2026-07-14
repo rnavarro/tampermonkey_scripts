@@ -12,9 +12,23 @@ Adds three floating buttons to the Alibaba message center (`message.alibaba.com`
 - **{ } JSON** — copies the same conversation as a structured JSON array (one object per message: sender, direction, timestamp, type, text, quote, product/file/video payloads).
 - **🐞 Debug** — copies the raw `outerHTML` of any message the parser couldn't fully classify (empty product-card title, unmatched wrapper, missing file/video fields), plus a type census. Paste that into an issue when a new message shape needs handling.
 
-Messages are read straight from the live DOM (`.message-item-wrapper`), sorted chronologically by `sendTime`. Your own messages are labelled via the `SELF_NAME` constant at the top of the script — edit that one string to change it.
+Messages are read straight from the live DOM (`.message-item-wrapper`), sorted chronologically by `sendTime`. Your own messages are labelled via the `SELF_NAME` constant at the top of the script — edit that one string to change it. The three buttons are fixed to the **bottom-left** of the page (offsets in `makeBtn`) to stay clear of the supplier chatbot on the right.
 
-Handles: sent/received text, `<br>` newlines, emoji (`:smile_147:`), reply quotes, product cards, file attachments (name/size/download URL), videos, and recalled messages.
+**Message types handled** (verified via the 🐞 Debug census, which flags anything unclassified):
+
+| Type | Source in DOM | Output |
+| --- | --- | --- |
+| text | `.session-rich-content.text` | plain text; `<br>` → newline; emoji `<img>` → `:name:` |
+| reply quote | `.quote-container` | Markdown blockquote above the message |
+| image | `.session-rich-content.media > img` (messageType 60) | `🖼️ Image` + URL |
+| video | `.session-rich-content.media > video` | `🎬 Video` + src |
+| file | `.inquiry-file-item` (`data-query`) | `📎 name (size)` + download URL |
+| product card | `.session-rich-content.card` (cardType 2000) | title (line-clamp span), price, productId (`extBizId`) |
+| requirement card | same, cardType 2111 | title (longest non-price span), price, productId (from `data-original`) |
+| recalled | `.revert-msg` | `_… recalled a message._` |
+| system / skipped | `.session-security-content`, `.sys-dx`, `.item-system-notice` | dropped (order-protection banner, payment prompt, address notice) |
+
+The `[img]` you may see inside a **quote preview** is an Alibaba limitation: when a message replies to an image, the platform only stores `[img]` as the quoted snippet, so there's no URL to recover there. The image messages themselves are captured fine.
 
 ## Install
 
