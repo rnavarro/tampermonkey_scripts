@@ -30,6 +30,18 @@ Messages are read straight from the live DOM (`.message-item-wrapper`), sorted c
 
 The `[img]` you may see inside a **quote preview** is an Alibaba limitation: when a message replies to an image, the platform only stores `[img]` as the quoted snippet, so there's no URL to recover there. The image messages themselves are captured fine.
 
+### `aliexpress-results-exporter.user.js`
+
+Adds three floating buttons (bottom-left) to AliExpress **store all-items** and **search** result pages (`aliexpress.com`/`.us` `/store/*` and `/w/*`):
+
+- **📋 Copy TSV** — copies the visible product results as tab-separated rows (one product per line: title, price, list price, currency, sold, itemId, productId, url, image), preceded by a `#` meta line (store id/name, query, sort, count). TSV is the default because it's the leanest lossless format for pasting a grid of results into another tool — no per-row key repetition (JSON) and no comma-escaping (AliExpress titles are full of commas).
+- **{ } JSON** — the same data as `{ meta, products }`.
+- **🐞 Debug** — dumps the `outerHTML` of any card missing a title, price, or productId, plus a census (total `/item/` links vs. deduped product cards). Paste into an issue when AliExpress changes a card shape.
+
+These cards carry **no stable class names** (class-less `<div>`s with inline styles), so the parser anchors on structural signals: `a[href*="/item/"]` for the card, `/item/(\d+).html` for the itemId, the `utlogmap` attribute's `x_object_id` for the canonical productId, `img[alt]` for the full title, `img[src]` for the image, the `"N sold"` text, and the `pdp_npi` href param for both list and sale price.
+
+Results are read from the **currently loaded** DOM. AliExpress lazy-loads and paginates the grid, so scroll to bring the products you want into the page (and page through, if needed) before clicking — the exporter captures whatever cards are present at click time.
+
 ## Building a new script
 
 Every scraper here is built the same way: dump the live DOM, design selectors against real markup, then bake a **🐞 Debug** button into the script so future breakage self-reports.
