@@ -30,6 +30,18 @@ Messages are read straight from the live DOM (`.message-item-wrapper`), sorted c
 
 The `[img]` you may see inside a **quote preview** is an Alibaba limitation: when a message replies to an image, the platform only stores `[img]` as the quoted snippet, so there's no URL to recover there. The image messages themselves are captured fine.
 
+## Building a new script
+
+Every scraper here is built the same way: dump the live DOM, design selectors against real markup, then bake a **🐞 Debug** button into the script so future breakage self-reports.
+
+To cold-start a script for a new site, use [`dev/dom-recon.js`](dev/dom-recon.js) — a paste-into-console snippet (not a userscript). Open the target page with the results visible, open DevTools (F12) → Console, paste the whole file, and it copies:
+
+- the page URL and title,
+- the most-repeated element containers (the repeated element is almost always the "result" row/card), ranked by count,
+- the full `outerHTML` of the single best candidate.
+
+Hand that output over and it becomes the selector map for the new script. Once the script exists, its own 🐞 Debug button takes over this role — flagging any item it couldn't classify, so new page shapes surface instead of silently dropping.
+
 ## Install
 
 Open the raw URL in a browser that has Tampermonkey installed — it intercepts any `.user.js` URL and shows the install page:
